@@ -122,6 +122,32 @@ COMPILE_FLAGS := $(CPPFLAGS) $(PRECISION_CPPFLAGS) $(FFLAGS) \
 LINK_FLAGS    := $(LDFLAGS) $(PARALLEL_FLAGS)
 
 #------------------------------------------------------------------------------------------
+# FortranMatrix / libMatrix
+#------------------------------------------------------------------------------------------
+
+LIBMATRIX_ROOT ?= external/FortranMatrix/Matrix
+
+ifneq ($(filter gfortran gnu,$(COMPILER_FAMILY)),)
+   LIBMATRIX_VARIANT ?= gnu
+else ifneq ($(filter ifx intel,$(COMPILER_FAMILY)),)
+   LIBMATRIX_VARIANT ?= intel
+else
+   LIBMATRIX_VARIANT ?=
+endif
+
+LIBMATRIX_MOD_DIR ?= $(LIBMATRIX_ROOT)/lib/$(LIBMATRIX_VARIANT)
+LIBMATRIX_LIB_DIR ?= $(LIBMATRIX_ROOT)/lib/$(LIBMATRIX_VARIANT)
+
+LIBMATRIX_INCLUDE := -I$(LIBMATRIX_MOD_DIR)
+LIBMATRIX_LIBS    := -L$(LIBMATRIX_LIB_DIR) -lMatrix -llapack -lblas
+
+LIBMATRIX_MODULE  := $(LIBMATRIX_MOD_DIR)/array_mod.mod
+LIBMATRIX_ARCHIVE := $(LIBMATRIX_LIB_DIR)/libMatrix.a
+
+LIBMATRIX_TEST_OBJECT     := $(OBJ_DIR)/test_libmatrix.o
+LIBMATRIX_TEST_EXECUTABLE := $(TEST_BIN_DIR)/test_libmatrix
+
+#------------------------------------------------------------------------------------------
 # Targets
 #------------------------------------------------------------------------------------------
 
@@ -130,7 +156,8 @@ LINK_FLAGS    := $(LDFLAGS) $(PARALLEL_FLAGS)
 .SUFFIXES:
 
 .PHONY: all modules tests test test-parameters test-error test-strings test-lattice \
-        test-precisions test-compilers dirs info help clean clean-compiler distclean
+        test-libmatrix check-libmatrix test-precisions test-compilers \
+        dirs info help clean clean-compiler distclean
 
 all: modules
 
@@ -159,6 +186,26 @@ test-error: $(TEST_BIN_DIR)/test_error
 
 test-lattice: $(TEST_BIN_DIR)/test_lattice
 	@$< 
+
+test-libmatrix: $(LIBMATRIX_TEST_EXECUTABLE)
+	@$<
+
+check-libmatrix:
+	@if [ "$(PRECISION)" != "double" ]; then \
+	   echo "ERROR: libMatrix currently supports only PRECISION=double"; \
+	   exit 1; \
+	fi
+	@if [ ! -f "$(LIBMATRIX_MODULE)" ]; then \
+	   echo "ERROR: array_mod.mod was not found at:"; \
+	   echo "       $(LIBMATRIX_MODULE)"; \
+	   echo "Check the submodule and compiler-specific libMatrix directory."; \
+	   exit 1; \
+	fi
+	@if [ ! -f "$(LIBMATRIX_ARCHIVE)" ]; then \
+	   echo "ERROR: libMatrix.a was not found at:"; \
+	   echo "       $(LIBMATRIX_ARCHIVE)"; \
+	   exit 1; \
+	fi
 
 test-precisions:
 	@set -e; \
@@ -203,6 +250,10 @@ info:
 	@echo "CPPFLAGS         : $(CPPFLAGS) $(PRECISION_CPPFLAGS)"
 	@echo "LDFLAGS          : $(LINK_FLAGS)"
 	@echo "LDLIBS           : $(LDLIBS)"
+	@echo "libMatrix root   : $(LIBMATRIX_ROOT)"
+	@echo "libMatrix flavor : $(LIBMATRIX_VARIANT)"
+	@echo "libMatrix modules: $(LIBMATRIX_MOD_DIR)"
+	@echo "libMatrix library: $(LIBMATRIX_LIB_DIR)"
 
 help:
 	@echo "Common commands:"
@@ -212,6 +263,7 @@ help:
 	@echo "  make COMPILER=nvfortran PRECISION=single test"
 	@echo "  make test-precisions"
 	@echo "  make test-compilers"
+	@echo "  make COMPILER=gfortran PRECISION=double test-libmatrix"
 	@echo "  make info"
 	@echo "  make clean"
 	@echo "  make clean-compiler COMPILER=gfortran"
@@ -273,6 +325,19 @@ $(TEST_BIN_DIR)/test_lattice: $(MODULE_OBJECTS) $(OBJ_DIR)/test_lattice.o | dirs
 	@echo "[$(COMPILER)/$(BUILD_TYPE)/$(PRECISION)] Linking $@"
 	$(FC) $(LINK_FLAGS) $^ $(LDLIBS) -o $@
 
+# libMatrix integration test. This target needs the external module directory.
+$(LIBMATRIX_TEST_OBJECT): $(TEST_DIR)/test_libmatrix.f90 \
+                          $(OBJ_DIR)/parameters.o | dirs check-libmatrix
+	@echo "[$(COMPILER)/$(BUILD_TYPE)/$(PRECISION)] Compiling $<"
+	$(FC) $(COMPILE_FLAGS) \
+	   $(MODULE_OUTPUT_OPTION) $(MODULE_INCLUDE_OPTION) \
+	   $(LIBMATRIX_INCLUDE) \
+	   -c $< -o $@
+
+$(LIBMATRIX_TEST_EXECUTABLE): $(OBJ_DIR)/parameters.o \
+                              $(LIBMATRIX_TEST_OBJECT) | dirs check-libmatrix
+	@echo "[$(COMPILER)/$(BUILD_TYPE)/$(PRECISION)] Linking $@"
+	$(FC) $(LINK_FLAGS) $^ $(LIBMATRIX_LIBS) $(LDLIBS) -o $@
 #------------------------------------------------------------------------------------------
 # Explicit Fortran module dependencies
 #------------------------------------------------------------------------------------------
