@@ -1,0 +1,12 @@
+# Build directory
+build/
+
+# Documentation Directory
+docs/ 
+
+# macOS
+.DS_Store 
+
+# emacs autosave
+*~
+'#*#'
