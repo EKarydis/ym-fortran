@@ -1,0 +1,3 @@
+[submodule "external/FortranMatrix"]
+	path = external/FortranMatrix
+	url = https://github.com/KNAnagnostop/FortranMatrix.git
