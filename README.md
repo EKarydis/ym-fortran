@@ -29,7 +29,7 @@ The current tests pass with:
 - Intel Fortran Compiler 2026.1.0 (`ifx`);
 - NVIDIA Fortran Compiler 26.1-0 (`nvfortran`).
 
-on `Ubuntu 24.04.4 LTS` kernel: `6.8.0-134-generic`
+on `Ubuntu 24.04.4 LTS` kernel: `6.8.0-134-generic` and 
 on `macOS 26.5.2` kernel: `Darwin 25.5.0`
 
 ## Building
@@ -47,9 +47,10 @@ You need:
 * An existing [FortranMatrix](https://github.com/KNAnagnostop/FortranMatrix.git) installation 
 * `LIBMATRIX_ROOT` set to the FortranMatrix installation prefix
 
-The currently supported compiler configurations are:
+The codebase has been tested with:
 
 * `gfortran v13.3.0`
+* `gfortran v16.1.0`
 * `ifx v2026.1.0`
 * `nvfortran v26.1-0`
 
