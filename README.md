@@ -54,6 +54,70 @@ The codebase has been tested with:
 * `ifx v2026.1.0`
 * `nvfortran v26.1-0`
 
+### FortranMatrix dependency
+
+`ym-fortran` depends on the
+[FortranMatrix](https://github.com/KNAnagnost/FortranMatrix) library.
+
+FortranMatrix must be built and installed before building `ym-fortran`.
+The dependency is not downloaded or compiled automatically by this project.
+
+The location of the FortranMatrix installation is provided through the
+`LIBMATRIX_ROOT` variable. Set it to the root directory of the existing
+FortranMatrix installation:
+
+```bash
+export LIBMATRIX_ROOT=/absolute/path/to/FortranMatrix/install
+```
+
+For example:
+
+```bash
+export LIBMATRIX_ROOT="$HOME/.local/FortranMatrix"
+```
+
+After setting the variable, build normally:
+
+```bash
+make
+```
+
+The variable may also be supplied for a single Make invocation:
+
+```bash
+make LIBMATRIX_ROOT=/absolute/path/to/FortranMatrix/install
+```
+
+The same form can be used with other targets and build options:
+
+```bash
+make LIBMATRIX_ROOT=/absolute/path/to/FortranMatrix/install test
+
+make \
+  LIBMATRIX_ROOT=/absolute/path/to/FortranMatrix/install \
+  COMPILER=ifx \
+  PRECISION=double \
+  BUILD=debug \
+  test
+```
+
+`LIBMATRIX_ROOT` must refer to the installation prefix expected by the build
+system, not merely to an arbitrary FortranMatrix source directory. The
+installation must contain the compiled FortranMatrix library and the module
+files required by the selected compiler.
+
+To inspect the complete build configuration used by `ym-fortran`:
+
+```bash
+make info
+```
+
+Because Fortran module files are compiler-specific, FortranMatrix and
+`ym-fortran` should be built with compatible compiler toolchains. For example,
+an installation produced with `gfortran` should be used with a `gfortran`
+build of `ym-fortran`.
+
+
 ### Default build
 
 To build the project with the default configuration, run:
