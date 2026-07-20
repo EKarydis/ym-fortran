@@ -1,6 +1,11 @@
 #==========================================================================================
-# Project: ym-fortran
-# File   : Makefile
+# Project : ym-fortran
+# File    : Makefile
+#
+# FortranMatrix policy:
+#   ym-fortran does not build or modify FortranMatrix.
+#   Targets that use libMatrix require an existing installation supplied with
+#   LIBMATRIX_ROOT=/path/to/FortranMatrix/Matrix.
 #==========================================================================================
 
 PROJECT         := ym-fortran
@@ -33,6 +38,9 @@ MODULE_OBJECTS := \
 TEST_NAMES       := test_parameters test_error test_strings test_lattice
 TEST_OBJECTS     := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(TEST_NAMES)))
 TEST_EXECUTABLES := $(addprefix $(TEST_BIN_DIR)/,$(TEST_NAMES))
+
+LIBMATRIX_TEST_OBJECT     := $(OBJ_DIR)/test_libmatrix.o
+LIBMATRIX_TEST_EXECUTABLE := $(TEST_BIN_DIR)/test_libmatrix
 
 #------------------------------------------------------------------------------------------
 # Compiler families
@@ -80,7 +88,7 @@ else
    OPENMP_FLAG           ?=
 endif
 
-# GNU make supplies FC=f77 as a built-in default. Replace only that default.
+# GNU Make supplies FC=f77 as a built-in default. Replace only that default.
 ifneq ($(filter default undefined,$(origin FC)),)
    FC := $(DEFAULT_FC)
 endif
@@ -122,6 +130,48 @@ COMPILE_FLAGS := $(CPPFLAGS) $(PRECISION_CPPFLAGS) $(FFLAGS) \
 LINK_FLAGS    := $(LDFLAGS) $(PARALLEL_FLAGS)
 
 #------------------------------------------------------------------------------------------
+# BLAS/LAPACK selection
+#------------------------------------------------------------------------------------------
+
+UNAME_S := $(shell uname -s 2>/dev/null)
+
+ifeq ($(UNAME_S),Darwin)
+   LINALG_LIBS ?= -framework Accelerate
+else
+   LINALG_LIBS ?= -llapack -lblas
+endif
+
+#------------------------------------------------------------------------------------------
+# External FortranMatrix / libMatrix installation
+#
+# Expected default layout:
+#   $(LIBMATRIX_ROOT)/lib/$(LIBMATRIX_VARIANT)/array_mod.mod
+#   $(LIBMATRIX_ROOT)/lib/$(LIBMATRIX_VARIANT)/libMatrix.a
+#
+# The module and library directories may be overridden independently when an
+# installation uses a different layout.
+#------------------------------------------------------------------------------------------
+
+LIBMATRIX_ROOT ?=
+
+ifneq ($(filter gfortran gnu,$(COMPILER_FAMILY)),)
+   LIBMATRIX_VARIANT ?= gnu
+else ifneq ($(filter ifx intel,$(COMPILER_FAMILY)),)
+   LIBMATRIX_VARIANT ?= intel
+else
+   LIBMATRIX_VARIANT ?=
+endif
+
+LIBMATRIX_MOD_DIR ?= $(if $(strip $(LIBMATRIX_ROOT)),$(LIBMATRIX_ROOT)/lib/$(LIBMATRIX_VARIANT),)
+LIBMATRIX_LIB_DIR ?= $(if $(strip $(LIBMATRIX_ROOT)),$(LIBMATRIX_ROOT)/lib/$(LIBMATRIX_VARIANT),)
+
+LIBMATRIX_MODULE  := $(LIBMATRIX_MOD_DIR)/array_mod.mod
+LIBMATRIX_ARCHIVE := $(LIBMATRIX_LIB_DIR)/libMatrix.a
+
+LIBMATRIX_INCLUDE := -I"$(LIBMATRIX_MOD_DIR)"
+LIBMATRIX_LIBS    := -L"$(LIBMATRIX_LIB_DIR)" -lMatrix $(LINALG_LIBS)
+
+#------------------------------------------------------------------------------------------
 # Targets
 #------------------------------------------------------------------------------------------
 
@@ -129,9 +179,12 @@ LINK_FLAGS    := $(LDFLAGS) $(PARALLEL_FLAGS)
 .DELETE_ON_ERROR:
 .SUFFIXES:
 
-.PHONY: all modules tests test test-parameters test-error test-strings test-lattice \
-        test-precisions test-compilers dirs info help clean clean-compiler distclean
+.PHONY: all modules tests test test-all \
+        test-parameters test-error test-strings test-lattice test-libmatrix \
+        check-libmatrix test-precisions test-compilers \
+        dirs info help clean clean-compiler distclean
 
+# The ordinary build does not require FortranMatrix.
 all: modules
 
 modules: $(MODULE_OBJECTS)
@@ -146,8 +199,12 @@ test: tests
 	@echo "Running error tests"
 	@$(TEST_DIR)/run_error_tests.sh $(TEST_BIN_DIR)/test_error
 	@echo "Running lattice tests"
-	@$(TEST_BIN_DIR)/test_lattice 
+	@$(TEST_BIN_DIR)/test_lattice
 
+# Run both the core tests and the external libMatrix integration test.
+test-all: test test-libmatrix
+
+# Individual core tests.
 test-parameters: $(TEST_BIN_DIR)/test_parameters
 	@$<
 
@@ -158,8 +215,58 @@ test-error: $(TEST_BIN_DIR)/test_error
 	@$(TEST_DIR)/run_error_tests.sh $<
 
 test-lattice: $(TEST_BIN_DIR)/test_lattice
-	@$< 
+	@$<
 
+# FortranMatrix integration test. This is the only current test that requires
+# an external FortranMatrix installation.
+test-libmatrix: $(LIBMATRIX_TEST_EXECUTABLE)
+	@$<
+
+check-libmatrix:
+	@if [ "$(PRECISION)" != "double" ]; then \
+	   echo "ERROR: libMatrix currently supports only PRECISION=double."; \
+	   echo "Use: make PRECISION=double LIBMATRIX_ROOT=/path/to/FortranMatrix/Matrix test-libmatrix"; \
+	   exit 1; \
+	fi
+	@if [ -z "$(strip $(LIBMATRIX_ROOT))" ]; then \
+	   echo "ERROR: LIBMATRIX_ROOT is not defined."; \
+	   echo ""; \
+	   echo "Provide the root of an existing FortranMatrix installation:"; \
+	   echo "  make LIBMATRIX_ROOT=/path/to/FortranMatrix/Matrix test-libmatrix"; \
+	   exit 1; \
+	fi
+	@if [ -z "$(strip $(LIBMATRIX_VARIANT))" ]; then \
+	   echo "ERROR: no default libMatrix variant is known for"; \
+	   echo "       COMPILER_FAMILY=$(COMPILER_FAMILY)."; \
+	   echo "Set it explicitly, for example:"; \
+	   echo "  make LIBMATRIX_ROOT=/path LIBMATRIX_VARIANT=gnu test-libmatrix"; \
+	   exit 1; \
+	fi
+	@if [ ! -d "$(LIBMATRIX_MOD_DIR)" ]; then \
+	   echo "ERROR: the libMatrix module directory was not found:"; \
+	   echo "       $(LIBMATRIX_MOD_DIR)"; \
+	   echo "Override LIBMATRIX_MOD_DIR if the installation layout differs."; \
+	   exit 1; \
+	fi
+	@if [ ! -d "$(LIBMATRIX_LIB_DIR)" ]; then \
+	   echo "ERROR: the libMatrix library directory was not found:"; \
+	   echo "       $(LIBMATRIX_LIB_DIR)"; \
+	   echo "Override LIBMATRIX_LIB_DIR if the installation layout differs."; \
+	   exit 1; \
+	fi
+	@if [ ! -f "$(LIBMATRIX_MODULE)" ]; then \
+	   echo "ERROR: array_mod.mod was not found:"; \
+	   echo "       $(LIBMATRIX_MODULE)"; \
+	   echo "Ensure FortranMatrix was built with a compiler compatible with $(FC)."; \
+	   exit 1; \
+	fi
+	@if [ ! -f "$(LIBMATRIX_ARCHIVE)" ]; then \
+	   echo "ERROR: libMatrix.a was not found:"; \
+	   echo "       $(LIBMATRIX_ARCHIVE)"; \
+	   exit 1; \
+	fi
+
+# These matrix-free test sweeps intentionally run only the core test suite.
 test-precisions:
 	@set -e; \
 	for precision in single double quad; do \
@@ -187,47 +294,61 @@ test-compilers:
 	done
 
 dirs:
-	@mkdir -p $(OBJ_DIR) $(MOD_DIR) $(TEST_BIN_DIR)
+	@mkdir -p "$(OBJ_DIR)" "$(MOD_DIR)" "$(TEST_BIN_DIR)"
 
 info:
-	@echo "Project          : $(PROJECT)"
-	@echo "Compiler label   : $(COMPILER)"
-	@echo "Compiler family  : $(COMPILER_FAMILY)"
-	@echo "Fortran compiler : $(FC)"
-	@echo "Build type       : $(BUILD_TYPE)"
-	@echo "Precision        : $(PRECISION)"
-	@echo "OpenMP           : $(OPENMP)"
-	@echo "Build directory  : $(BUILD_DIR)"
-	@echo "Module directory : $(MOD_DIR)"
-	@echo "FFLAGS           : $(FFLAGS) $(EXTRA_FFLAGS) $(PARALLEL_FLAGS)"
-	@echo "CPPFLAGS         : $(CPPFLAGS) $(PRECISION_CPPFLAGS)"
-	@echo "LDFLAGS          : $(LINK_FLAGS)"
-	@echo "LDLIBS           : $(LDLIBS)"
+	@echo "Project           : $(PROJECT)"
+	@echo "Compiler label    : $(COMPILER)"
+	@echo "Compiler family   : $(COMPILER_FAMILY)"
+	@echo "Fortran compiler  : $(FC)"
+	@echo "Build type        : $(BUILD_TYPE)"
+	@echo "Precision         : $(PRECISION)"
+	@echo "OpenMP            : $(OPENMP)"
+	@echo "Build directory   : $(BUILD_DIR)"
+	@echo "Module directory  : $(MOD_DIR)"
+	@echo "FFLAGS            : $(FFLAGS) $(EXTRA_FFLAGS) $(PARALLEL_FLAGS)"
+	@echo "CPPFLAGS          : $(CPPFLAGS) $(PRECISION_CPPFLAGS)"
+	@echo "LDFLAGS           : $(LINK_FLAGS)"
+	@echo "LDLIBS            : $(LDLIBS)"
+	@echo "Linear algebra    : $(LINALG_LIBS)"
+	@echo "libMatrix root    : $(if $(strip $(LIBMATRIX_ROOT)),$(LIBMATRIX_ROOT),(not set))"
+	@echo "libMatrix variant : $(if $(strip $(LIBMATRIX_VARIANT)),$(LIBMATRIX_VARIANT),(not set))"
+	@echo "libMatrix modules : $(if $(strip $(LIBMATRIX_MOD_DIR)),$(LIBMATRIX_MOD_DIR),(not set))"
+	@echo "libMatrix library : $(if $(strip $(LIBMATRIX_LIB_DIR)),$(LIBMATRIX_LIB_DIR),(not set))"
 
 help:
 	@echo "Common commands:"
 	@echo "  make"
 	@echo "  make test"
+	@echo "  make test-lattice"
 	@echo "  make COMPILER=ifx BUILD_TYPE=release"
 	@echo "  make COMPILER=nvfortran PRECISION=single test"
 	@echo "  make test-precisions"
 	@echo "  make test-compilers"
+	@echo "  make LIBMATRIX_ROOT=/path/to/FortranMatrix/Matrix test-libmatrix"
+	@echo "  make LIBMATRIX_ROOT=/path/to/FortranMatrix/Matrix test-all"
 	@echo "  make info"
 	@echo "  make clean"
 	@echo "  make clean-compiler COMPILER=gfortran"
 	@echo "  make distclean"
 	@echo ""
+	@echo "macOS example:"
+	@echo "  make LIBMATRIX_ROOT=\$$HOME/Software/FortranMatrix/Matrix test-libmatrix"
+	@echo ""
+	@echo "Alternative installation layout:"
+	@echo "  make LIBMATRIX_ROOT=/path LIBMATRIX_MOD_DIR=/mods LIBMATRIX_LIB_DIR=/libs test-libmatrix"
+	@echo ""
 	@echo "HPC wrapper example:"
 	@echo "  make COMPILER=cluster-gnu COMPILER_FAMILY=gfortran FC=ftn BUILD_TYPE=release"
 
 clean:
-	@rm -rf $(BUILD_DIR)
+	@rm -rf "$(BUILD_DIR)"
 
 clean-compiler:
-	@rm -rf $(BUILD_ROOT)/$(COMPILER)
+	@rm -rf "$(BUILD_ROOT)/$(COMPILER)"
 
 distclean:
-	@rm -rf $(BUILD_ROOT)
+	@rm -rf "$(BUILD_ROOT)"
 
 #------------------------------------------------------------------------------------------
 # Compilation rules
@@ -273,11 +394,25 @@ $(TEST_BIN_DIR)/test_lattice: $(MODULE_OBJECTS) $(OBJ_DIR)/test_lattice.o | dirs
 	@echo "[$(COMPILER)/$(BUILD_TYPE)/$(PRECISION)] Linking $@"
 	$(FC) $(LINK_FLAGS) $^ $(LDLIBS) -o $@
 
+# libMatrix integration test. It depends only on parameters and the installed
+# FortranMatrix module files.
+$(LIBMATRIX_TEST_OBJECT): $(TEST_DIR)/test_libmatrix.f90 \
+                          $(OBJ_DIR)/parameters.o | dirs check-libmatrix
+	@echo "[$(COMPILER)/$(BUILD_TYPE)/$(PRECISION)] Compiling $<"
+	$(FC) $(COMPILE_FLAGS) \
+	   $(MODULE_OUTPUT_OPTION) $(MODULE_INCLUDE_OPTION) \
+	   $(LIBMATRIX_INCLUDE) \
+	   -c $< -o $@
+
+$(LIBMATRIX_TEST_EXECUTABLE): $(OBJ_DIR)/parameters.o \
+                              $(LIBMATRIX_TEST_OBJECT) | dirs check-libmatrix
+	@echo "[$(COMPILER)/$(BUILD_TYPE)/$(PRECISION)] Linking $@"
+	$(FC) $(LINK_FLAGS) $^ $(LIBMATRIX_LIBS) $(LDLIBS) -o $@
+
 #------------------------------------------------------------------------------------------
 # Explicit Fortran module dependencies
 #------------------------------------------------------------------------------------------
 
-# Both utility modules currently depend on the common parameters module.
 $(OBJ_DIR)/error.o:   $(OBJ_DIR)/parameters.o
 $(OBJ_DIR)/strings.o: $(OBJ_DIR)/parameters.o
-$(OBJ_DIR)/lattice.o: $(OBJ_DIR)/parameters.o $(OBJ_DIR)/error.o 
+$(OBJ_DIR)/lattice.o: $(OBJ_DIR)/parameters.o $(OBJ_DIR)/error.o
