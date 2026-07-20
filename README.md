@@ -7,20 +7,13 @@ Yang–Mills lattice gauge theories.
 
 | Module | Source file | Status | Purpose |
 |---|---|---:|---|
-| `parameters` | `paramters.F90` | Ready | Floating-point precision, I/O units, and common numerical constants |
+| `parameters` | `parameters.F90` | Ready | Floating-point precision, I/O units, and common numerical constants |
 | `error` | `error.f90` | Ready | Common error-reporting facilities |
 | `strings` | `strings.f90` | Ready | Common character and string utilities |
 | `lattice_mod` | `lattice.f90` | Ready | Lattice geometry handling
-| `gauge_mod` | In development | Handles types "living" in the gauge group |
+| `gauge_mod` | In development | groups, gauge groups and gauge fields |
 
-The public constants currently exercised by the parameter-module test include:
 
-- precision selection: `dp`;
-- standard units: `stdin`, `stdout`, `stderr`;
-- integer constants: `ZERO`, `ONE`, `TWO`;
-- real constants: `ZEROD`, `ONED`, `TWOD`, `HALF`, `EPS`;
-- mathematical constants: `PI`, `PISQ`, `PIHLF`;
-- complex constants: `ZEROC`, `ONEC`, `IMU`.
 
 Currently implemented and tested modules include:
 
@@ -37,6 +30,7 @@ The current tests pass with:
 - NVIDIA Fortran Compiler 26.1-0 (`nvfortran`).
 
 on `Ubuntu 24.04.4 LTS` kernel: `6.8.0-134-generic`
+on `macOS 26.5.2` kernel: `Darwin 25.5.0`
 
 ## Building
 
@@ -50,6 +44,8 @@ You need:
 
 * GNU Make
 * A Fortran 2018 compiler
+* An existing [FortranMatrix](https://github.com/KNAnagnostop/FortranMatrix.git) installation 
+* `LIBMATRIX_ROOT` set to the FortranMatrix installation prefix
 
 The currently supported compiler configurations are:
 
